@@ -1,4 +1,4 @@
-use crate::hub::{HubInfo, find_hub_by_location, scan_hubs};
+use crate::hub::{HubInfo, find_hub_by_location, read_device_strings, scan_hubs};
 use crate::usb_ids::UsbIds;
 use rusb::UsbContext;
 use serde::Serialize;
@@ -154,21 +154,10 @@ fn read_connected_device_info(
     };
     if let Ok(handle) = device.open() {
         let _ = handle.set_auto_detach_kernel_driver(true);
-        if desc.manufacturer_string_index().is_some()
-            && let Ok(s) = handle.read_manufacturer_string_ascii(&desc)
-        {
-            info.vendor = s.trim().to_string();
-        }
-        if desc.product_string_index().is_some()
-            && let Ok(s) = handle.read_product_string_ascii(&desc)
-        {
-            info.product = s.trim().to_string();
-        }
-        if desc.serial_number_string_index().is_some()
-            && let Ok(s) = handle.read_serial_number_string_ascii(&desc)
-        {
-            info.serial = s.trim().to_string();
-        }
+        let ds = read_device_strings(&handle, &desc);
+        info.vendor = ds.vendor;
+        info.product = ds.product;
+        info.serial = ds.serial;
     }
 
     if info.vendor.is_empty()

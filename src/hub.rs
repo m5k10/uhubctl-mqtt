@@ -137,55 +137,71 @@ fn read_hub_descriptor(
     Ok((nports, lpsm))
 }
 
+pub fn read_device_strings(
+    handle: &rusb::DeviceHandle<rusb::Context>,
+    desc: &rusb::DeviceDescriptor,
+) -> DescriptorStrings {
+    let mut ds = DescriptorStrings::default();
+    if desc.manufacturer_string_index().is_some()
+        && let Ok(s) = handle.read_manufacturer_string_ascii(desc)
+    {
+        ds.vendor = s.trim().to_string();
+    }
+    if desc.product_string_index().is_some()
+        && let Ok(s) = handle.read_product_string_ascii(desc)
+    {
+        ds.product = s.trim().to_string();
+    }
+    if desc.serial_number_string_index().is_some()
+        && let Ok(s) = handle.read_serial_number_string_ascii(desc)
+    {
+        ds.serial = s.trim().to_string();
+    }
+    ds
+}
+
 fn get_device_description(device: &rusb::Device<rusb::Context>) -> DescriptorStrings {
     let desc = match device.device_descriptor() {
         Ok(d) => d,
         Err(_) => return DescriptorStrings::default(),
     };
 
-    let mut ds = DescriptorStrings::default();
-    if let Ok(handle) = device.open() {
-        let _ = handle.set_auto_detach_kernel_driver(true);
-        if desc.manufacturer_string_index().is_some()
-            && let Ok(s) = handle.read_manufacturer_string_ascii(&desc)
-        {
-            ds.vendor = s.trim().to_string();
-        }
-        if desc.product_string_index().is_some()
-            && let Ok(s) = handle.read_product_string_ascii(&desc)
-        {
-            ds.product = s.trim().to_string();
-        }
-        if desc.serial_number_string_index().is_some()
-            && let Ok(s) = handle.read_serial_number_string_ascii(&desc)
-        {
-            ds.serial = s.trim().to_string();
-        }
+    let mut ds = match device.open() {
+        Ok(handle) => {
+            let _ = handle.set_auto_detach_kernel_driver(true);
+            let mut ds = read_device_strings(&handle, &desc);
 
-        if ds.serial.is_empty() {
-            for idx in 1u8..=5 {
-                if let Ok(s) = handle.read_string_descriptor_ascii(idx) {
-                    let s = s.trim().to_string();
-                    if !s.is_empty() && s != ds.vendor && s != ds.product {
-                        ds.serial = s;
-                        break;
+            if ds.serial.is_empty() {
+                for idx in 1u8..=5 {
+                    if let Ok(s) = handle.read_string_descriptor_ascii(idx) {
+                        let s = s.trim().to_string();
+                        if !s.is_empty() && s != ds.vendor && s != ds.product {
+                            ds.serial = s;
+                            break;
+                        }
                     }
                 }
             }
+
+            ds
         }
+        Err(_) => DescriptorStrings::default(),
+    };
 
-        ds.description = format!(
-            "{:04x}:{:04x}{}{}{}{}{}{}",
-            desc.vendor_id(),
-            desc.product_id(),
-            if ds.vendor.is_empty() { "" } else { " " },
-            ds.vendor,
-            if ds.product.is_empty() { "" } else { " " },
-            ds.product,
-            if ds.serial.is_empty() { "" } else { " " },
-            ds.serial,
-        );
+    ds.description = format!(
+        "{:04x}:{:04x}{}{}{}{}{}{}",
+        desc.vendor_id(),
+        desc.product_id(),
+        if ds.vendor.is_empty() { "" } else { " " },
+        ds.vendor,
+        if ds.product.is_empty() { "" } else { " " },
+        ds.product,
+        if ds.serial.is_empty() { "" } else { " " },
+        ds.serial,
+    );
 
+    if let Ok(handle) = device.open() {
+        let _ = handle.set_auto_detach_kernel_driver(true);
         if desc.class_code() == LIBUSB_CLASS_HUB {
             let ver = desc.usb_version();
             let bcd_usb = (ver.0 as u16) << 8 | (ver.1 as u16);
