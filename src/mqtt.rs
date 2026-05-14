@@ -144,6 +144,11 @@ async fn publish_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(),
     Ok(())
 }
 
+async fn publish_str(cli: &mqtt::AsyncClient, topic: &str, payload: &str) -> Result<(), String> {
+    let msg = mqtt::Message::new(topic, payload, mqtt::QoS::AtLeastOnce);
+    cli.publish(msg).await.map_err(|e| format!("Publish failed: {}", e))
+}
+
 async fn publish_state(
     cli: &mqtt::AsyncClient,
     hub_location: &str,
@@ -152,11 +157,7 @@ async fn publish_state(
 ) -> Result<(), String> {
     let state = if powered { "ON" } else { "OFF" };
     let topic = MqttDiscoverySwitch::state_topic(TOPIC_PREFIX, hub_location, port);
-    let msg = mqtt::Message::new(topic, state, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("State publish: {}", e))?;
-    Ok(())
+    publish_str(cli, &topic, state).await
 }
 
 async fn publish_connected_state(
@@ -167,10 +168,7 @@ async fn publish_connected_state(
 ) -> Result<(), String> {
     let state = if connected { "ON" } else { "OFF" };
     let topic = format!("{}/{}/port/{}/connected", TOPIC_PREFIX, hub_location, port);
-    let msg = mqtt::Message::new(topic, state, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Connected state publish: {}", e))
+    publish_str(cli, &topic, state).await
 }
 
 async fn publish_attributes(
@@ -263,18 +261,12 @@ async fn publish_hub_availability(
 ) -> Result<(), String> {
     let payload = if online { "online" } else { "offline" };
     let topic = format!("{}/{}/status", TOPIC_PREFIX, location);
-    let msg = mqtt::Message::new(topic, payload, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Hub avail publish: {}", e))
+    publish_str(cli, &topic, payload).await
 }
 
 async fn publish_global_availability(cli: &mqtt::AsyncClient, online: bool) -> Result<(), String> {
     let payload = if online { "online" } else { "offline" };
-    let msg = mqtt::Message::new(AVAIL_TOPIC, payload, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Global avail publish: {}", e))
+    publish_str(cli, AVAIL_TOPIC, payload).await
 }
 
 async fn publish_birth(cli: &mqtt::AsyncClient, known_hubs: &[String]) -> Result<(), String> {
