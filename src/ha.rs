@@ -47,6 +47,25 @@ pub struct MqttDevice {
     pub manufacturer: String,
 }
 
+impl MqttDevice {
+    pub fn new(topic_prefix: &str, safe_loc: &str, hub_location: &str, hub_vendor: &str, vendor_name: &str, product_name: &str) -> Self {
+        MqttDevice {
+            identifiers: vec![format!("{}_{}", topic_prefix, safe_loc)],
+            name: format!("USB Hub {}", hub_location),
+            model: if !product_name.is_empty() {
+                product_name.to_string()
+            } else {
+                format!("USB Hub ({})", hub_vendor)
+            },
+            manufacturer: if !vendor_name.is_empty() {
+                vendor_name.to_string()
+            } else {
+                "uhubctl-mqtt".to_string()
+            },
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct PortAttributes {
     pub hub_location: String,
@@ -163,20 +182,7 @@ impl MqttHubSensor {
                     payload_not_available: "offline".to_string(),
                 },
             ],
-            device: MqttDevice {
-                identifiers: vec![format!("{}_{}", topic_prefix, safe_loc)],
-                name: format!("USB Hub {}", hub.location),
-                model: if !hub.ds.product.is_empty() {
-                    hub.ds.product.clone()
-                } else {
-                    format!("USB Hub ({})", hub.vendor)
-                },
-                manufacturer: if !hub.ds.vendor.is_empty() {
-                    hub.ds.vendor.clone()
-                } else {
-                    "uhubctl-mqtt".to_string()
-                },
-            },
+            device: MqttDevice::new(topic_prefix, &safe_loc, &hub.location, &hub.vendor, &hub.ds.vendor, &hub.ds.product),
         }
     }
 
@@ -251,20 +257,7 @@ impl MqttPortBinarySensor {
                     payload_not_available: "offline".to_string(),
                 },
             ],
-            device: MqttDevice {
-                identifiers: vec![format!("{}_{}", topic_prefix, &safe_loc)],
-                name: format!("USB Hub {}", hub_location),
-                model: if !product_name.is_empty() {
-                    product_name.to_string()
-                } else {
-                    format!("USB Hub ({})", hub_vendor)
-                },
-                manufacturer: if !vendor_name.is_empty() {
-                    vendor_name.to_string()
-                } else {
-                    "uhubctl-mqtt".to_string()
-                },
-            },
+            device: MqttDevice::new(topic_prefix, &safe_loc, hub_location, hub_vendor, vendor_name, product_name),
             device_class: "connectivity".to_string(),
             payload_on: "ON".to_string(),
             payload_off: "OFF".to_string(),
@@ -332,20 +325,7 @@ impl MqttDiscoverySwitch {
             payload_off: "OFF".to_string(),
             state_on: "ON".to_string(),
             state_off: "OFF".to_string(),
-            device: MqttDevice {
-                identifiers: vec![format!("{}_{}", topic_prefix, &safe_loc)],
-                name: format!("USB Hub {}", hub_location),
-                model: if !product_name.is_empty() {
-                    product_name.to_string()
-                } else {
-                    format!("USB Hub ({})", hub_vendor)
-                },
-                manufacturer: if !vendor_name.is_empty() {
-                    vendor_name.to_string()
-                } else {
-                    "uhubctl-mqtt".to_string()
-                },
-            },
+            device: MqttDevice::new(topic_prefix, &safe_loc, hub_location, hub_vendor, vendor_name, product_name),
         }
     }
 
