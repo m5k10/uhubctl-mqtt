@@ -11,6 +11,12 @@ use std::process;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 
+fn default_node_id() -> String {
+    hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
 use control::PortStatusInfo;
 use hub::{DescriptorStrings, HubInfo};
 use mqtt::{HubEvent, MainCmd};
@@ -66,6 +72,13 @@ struct Args {
         help = "Max seconds to wait for MQTT reconnect before exiting"
     )]
     reconnect_timeout: u64,
+
+    #[arg(
+        long,
+        default_value_t = default_node_id(),
+        help = "Unique node identifier (defaults to hostname)"
+    )]
+    node_id: String,
 }
 
 #[derive(Clone, Debug)]
@@ -274,8 +287,9 @@ async fn main() {
         let url = args.mqtt_url.clone();
         let user = args.mqtt_username.clone();
         let pass = args.mqtt_password.clone();
+        let node_id = args.node_id.clone();
         async move {
-            mqtt::mqtt_loop(url, user, pass, txe, txc, txr, reconnect_timeout).await;
+            mqtt::mqtt_loop(url, user, pass, node_id, txe, txc, txr, reconnect_timeout).await;
         }
     });
 

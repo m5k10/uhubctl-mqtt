@@ -295,7 +295,14 @@ fn set_port_power(hub: &HubInfo, port: u8, on: bool) -> Result<(), String> {
     let request = if on { 0x03u8 } else { 0x01u8 };
 
     handle
-        .write_control(rt, request, USB_PORT_FEAT_POWER, port as u16, &[], USB_CTRL_TIMEOUT)
+        .write_control(
+            rt,
+            request,
+            USB_PORT_FEAT_POWER,
+            port as u16,
+            &[],
+            USB_CTRL_TIMEOUT,
+        )
         .map_err(|e| format!("Port power: {}", e))?;
 
     Ok(())

@@ -48,10 +48,18 @@ pub struct MqttDevice {
 }
 
 impl MqttDevice {
-    pub fn new(topic_prefix: &str, safe_loc: &str, hub_location: &str, hub_vendor: &str, vendor_name: &str, product_name: &str) -> Self {
+    pub fn new(
+        node_id: &str,
+        topic_prefix: &str,
+        safe_loc: &str,
+        hub_location: &str,
+        hub_vendor: &str,
+        vendor_name: &str,
+        product_name: &str,
+    ) -> Self {
         MqttDevice {
             identifiers: vec![format!("{}_{}", topic_prefix, safe_loc)],
-            name: format!("USB Hub {}", hub_location),
+            name: format!("USB Hub {} ({})", hub_location, node_id),
             model: if !product_name.is_empty() {
                 product_name.to_string()
             } else {
@@ -178,6 +186,7 @@ impl HubAttributes {
 impl MqttHubSensor {
     pub fn new(
         hub: &HubInfo,
+        node_id: &str,
         global_avail_topic: &str,
         topic_prefix: &str,
         _discovery_prefix: &str,
@@ -190,15 +199,23 @@ impl MqttHubSensor {
             state_topic: format!("{}/{}/hub/state", topic_prefix, hub.location),
             attributes_topic: format!("{}/{}/hub/attributes", topic_prefix, hub.location),
             availability: availability_topics(global_avail_topic, &per_hub_avail),
-            device: MqttDevice::new(topic_prefix, &safe_loc, &hub.location, &hub.vendor, &hub.ds.vendor, &hub.ds.product),
+            device: MqttDevice::new(
+                node_id,
+                topic_prefix,
+                &safe_loc,
+                &hub.location,
+                &hub.vendor,
+                &hub.ds.vendor,
+                &hub.ds.product,
+            ),
         }
     }
 
-    pub fn config_topic(discovery_prefix: &str, topic_prefix: &str, hub_location: &str) -> String {
+    pub fn config_topic(discovery_prefix: &str, node_id: &str, hub_location: &str) -> String {
         let safe_loc = safe_location(hub_location);
         format!(
             "{}/sensor/{}/{}_hub/config",
-            discovery_prefix, topic_prefix, safe_loc
+            discovery_prefix, node_id, safe_loc
         )
     }
 
@@ -240,6 +257,7 @@ impl MqttPortBinarySensor {
         vendor_name: &str,
         product_name: &str,
         port: u8,
+        node_id: &str,
         global_avail_topic: &str,
         topic_prefix: &str,
         _discovery_prefix: &str,
@@ -254,7 +272,15 @@ impl MqttPortBinarySensor {
             state_topic: format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port),
             attributes_topic: format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port),
             availability: availability_topics(global_avail_topic, &per_hub_avail),
-            device: MqttDevice::new(topic_prefix, &safe_loc, hub_location, hub_vendor, vendor_name, product_name),
+            device: MqttDevice::new(
+                node_id,
+                topic_prefix,
+                &safe_loc,
+                hub_location,
+                hub_vendor,
+                vendor_name,
+                product_name,
+            ),
             device_class: "connectivity".to_string(),
             payload_on: "ON".to_string(),
             payload_off: "OFF".to_string(),
@@ -263,17 +289,25 @@ impl MqttPortBinarySensor {
 
     pub fn config_topic(
         discovery_prefix: &str,
-        topic_prefix: &str,
+        node_id: &str,
         hub_location: &str,
         port: u8,
     ) -> String {
         let safe_loc = safe_location(hub_location);
         format!(
             "{}/binary_sensor/{}/p{}_{}/config",
-            discovery_prefix, topic_prefix, safe_loc, port
+            discovery_prefix, node_id, safe_loc, port
         )
     }
 
+    pub fn state_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
+        format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port)
+    }
+
+    #[allow(dead_code)]
+    pub fn attributes_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
+        format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port)
+    }
 }
 
 impl MqttDiscoverySwitch {
@@ -284,6 +318,7 @@ impl MqttDiscoverySwitch {
         vendor_name: &str,
         product_name: &str,
         port: u8,
+        node_id: &str,
         global_avail_topic: &str,
         topic_prefix: &str,
         _discovery_prefix: &str,
@@ -304,20 +339,28 @@ impl MqttDiscoverySwitch {
             payload_off: "OFF".to_string(),
             state_on: "ON".to_string(),
             state_off: "OFF".to_string(),
-            device: MqttDevice::new(topic_prefix, &safe_loc, hub_location, hub_vendor, vendor_name, product_name),
+            device: MqttDevice::new(
+                node_id,
+                topic_prefix,
+                &safe_loc,
+                hub_location,
+                hub_vendor,
+                vendor_name,
+                product_name,
+            ),
         }
     }
 
     pub fn config_topic(
         discovery_prefix: &str,
-        topic_prefix: &str,
+        node_id: &str,
         hub_location: &str,
         port: u8,
     ) -> String {
         let safe_loc = safe_location(hub_location);
         format!(
             "{}/switch/{}/p{}_{}/config",
-            discovery_prefix, topic_prefix, safe_loc, port
+            discovery_prefix, node_id, safe_loc, port
         )
     }
 
