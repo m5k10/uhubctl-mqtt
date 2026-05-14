@@ -249,33 +249,6 @@ pub fn read_all_port_status(
     info
 }
 
-/// Turn port power on or off.
-pub fn set_port_power(
-    handle: &rusb::DeviceHandle<rusb::Context>,
-    port: u8,
-    on: bool,
-) -> Result<(), String> {
-    let rt = rusb::request_type(
-        rusb::Direction::Out,
-        rusb::RequestType::Class,
-        rusb::Recipient::Other,
-    );
-    let request = if on { 0x03u8 } else { 0x01u8 };
-
-    handle
-        .write_control(
-            rt,
-            request,
-            USB_PORT_FEAT_POWER,
-            port as u16,
-            &[],
-            USB_CTRL_TIMEOUT,
-        )
-        .map_err(|e| format!("Port power: {}", e))?;
-
-    Ok(())
-}
-
 /// Control port power on a hub by location, including its dual partner.
 pub fn control_port_power(
     context: &rusb::Context,
@@ -292,18 +265,18 @@ pub fn control_port_power(
         return Err(format!("Port {} out of range (1-{})", port, primary.nports));
     }
 
-    set_single_port_power(primary, port, on)?;
+    set_port_power(primary, port, on)?;
 
     if let Some(ref dual_loc) = primary.dual_location
         && let Some(dual) = find_hub_by_location(&hubs, dual_loc)
     {
-        let _ = set_single_port_power(dual, port, on);
+        let _ = set_port_power(dual, port, on);
     }
 
     Ok(())
 }
 
-fn set_single_port_power(hub: &HubInfo, port: u8, on: bool) -> Result<(), String> {
+fn set_port_power(hub: &HubInfo, port: u8, on: bool) -> Result<(), String> {
     let dev = hub
         .device
         .as_ref()
@@ -314,5 +287,16 @@ fn set_single_port_power(hub: &HubInfo, port: u8, on: bool) -> Result<(), String
         .map_err(|e| format!("Cannot open {}: {}", hub.location, e))?;
     let _ = handle.set_auto_detach_kernel_driver(true);
 
-    set_port_power(&handle, port, on)
+    let rt = rusb::request_type(
+        rusb::Direction::Out,
+        rusb::RequestType::Class,
+        rusb::Recipient::Other,
+    );
+    let request = if on { 0x03u8 } else { 0x01u8 };
+
+    handle
+        .write_control(rt, request, USB_PORT_FEAT_POWER, port as u16, &[], USB_CTRL_TIMEOUT)
+        .map_err(|e| format!("Port power: {}", e))?;
+
+    Ok(())
 }
