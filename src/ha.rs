@@ -66,6 +66,21 @@ impl MqttDevice {
     }
 }
 
+fn availability_topics(global_avail_topic: &str, per_hub_avail: &str) -> Vec<AvailabilityTopic> {
+    vec![
+        AvailabilityTopic {
+            topic: global_avail_topic.to_string(),
+            payload_available: "online".to_string(),
+            payload_not_available: "offline".to_string(),
+        },
+        AvailabilityTopic {
+            topic: per_hub_avail.to_string(),
+            payload_available: "online".to_string(),
+            payload_not_available: "offline".to_string(),
+        },
+    ]
+}
+
 #[derive(Serialize)]
 pub struct PortAttributes {
     pub hub_location: String,
@@ -170,18 +185,7 @@ impl MqttHubSensor {
             unique_id: format!("{}_{}_hub", topic_prefix, safe_loc),
             state_topic: format!("{}/{}/hub/state", topic_prefix, hub.location),
             attributes_topic: format!("{}/{}/hub/attributes", topic_prefix, hub.location),
-            availability: vec![
-                AvailabilityTopic {
-                    topic: global_avail_topic.to_string(),
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-                AvailabilityTopic {
-                    topic: per_hub_avail,
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-            ],
+            availability: availability_topics(global_avail_topic, &per_hub_avail),
             device: MqttDevice::new(topic_prefix, &safe_loc, &hub.location, &hub.vendor, &hub.ds.vendor, &hub.ds.product),
         }
     }
@@ -245,18 +249,7 @@ impl MqttPortBinarySensor {
             unique_id: id,
             state_topic: format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port),
             attributes_topic: format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port),
-            availability: vec![
-                AvailabilityTopic {
-                    topic: global_avail_topic.to_string(),
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-                AvailabilityTopic {
-                    topic: per_hub_avail,
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-            ],
+            availability: availability_topics(global_avail_topic, &per_hub_avail),
             device: MqttDevice::new(topic_prefix, &safe_loc, hub_location, hub_vendor, vendor_name, product_name),
             device_class: "connectivity".to_string(),
             payload_on: "ON".to_string(),
@@ -309,18 +302,7 @@ impl MqttDiscoverySwitch {
             command_topic: format!("{}/set", base_topic),
             state_topic: format!("{}/state", base_topic),
             attributes_topic: format!("{}/attributes", base_topic),
-            availability: vec![
-                AvailabilityTopic {
-                    topic: global_avail_topic.to_string(),
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-                AvailabilityTopic {
-                    topic: per_hub_avail,
-                    payload_available: "online".to_string(),
-                    payload_not_available: "offline".to_string(),
-                },
-            ],
+            availability: availability_topics(global_avail_topic, &per_hub_avail),
             payload_on: "ON".to_string(),
             payload_off: "OFF".to_string(),
             state_on: "ON".to_string(),
