@@ -1,5 +1,6 @@
 use log::{error, info, warn};
 use paho_mqtt as mqtt;
+use serde::Serialize;
 use std::process;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, Instant};
@@ -104,18 +105,13 @@ async fn publish_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(),
                 TOPIC_PREFIX,
                 DISCOVERY_PREFIX,
             );
-            let json =
-                serde_json::to_string(&config).map_err(|e| format!("Discovery JSON: {}", e))?;
             let topic = MqttPortBinarySensor::config_topic(
                 DISCOVERY_PREFIX,
                 TOPIC_PREFIX,
                 &hub.location,
                 port,
             );
-            let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-            cli.publish(msg)
-                .await
-                .map_err(|e| format!("Discovery publish: {}", e))?;
+            publish_json(cli, &topic, &config).await?;
         } else {
             let config = MqttDiscoverySwitch::new(
                 &hub.location,
@@ -127,18 +123,13 @@ async fn publish_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(),
                 TOPIC_PREFIX,
                 DISCOVERY_PREFIX,
             );
-            let json =
-                serde_json::to_string(&config).map_err(|e| format!("Discovery JSON: {}", e))?;
             let topic = MqttDiscoverySwitch::config_topic(
                 DISCOVERY_PREFIX,
                 TOPIC_PREFIX,
                 &hub.location,
                 port,
             );
-            let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-            cli.publish(msg)
-                .await
-                .map_err(|e| format!("Discovery publish: {}", e))?;
+            publish_json(cli, &topic, &config).await?;
         }
     }
     Ok(())
@@ -147,6 +138,11 @@ async fn publish_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(),
 async fn publish_str(cli: &mqtt::AsyncClient, topic: &str, payload: &str) -> Result<(), String> {
     let msg = mqtt::Message::new(topic, payload, mqtt::QoS::AtLeastOnce);
     cli.publish(msg).await.map_err(|e| format!("Publish failed: {}", e))
+}
+
+async fn publish_json<T: Serialize>(cli: &mqtt::AsyncClient, topic: &str, payload: &T) -> Result<(), String> {
+    let json = serde_json::to_string(payload).map_err(|e| format!("JSON: {}", e))?;
+    publish_str(cli, topic, &json).await
 }
 
 async fn publish_state(
@@ -213,39 +209,24 @@ async fn publish_attributes(
         connected_max_power_ma,
     };
     let topic = MqttDiscoverySwitch::attributes_topic(TOPIC_PREFIX, hub_location, port);
-    let json = serde_json::to_string(&attrs).map_err(|e| format!("Attrs JSON: {}", e))?;
-    let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Attrs publish: {}", e))
+    publish_json(cli, &topic, &attrs).await
 }
 
 async fn publish_hub_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
     let config = MqttHubSensor::new(hub, AVAIL_TOPIC, TOPIC_PREFIX, DISCOVERY_PREFIX);
-    let json = serde_json::to_string(&config).map_err(|e| format!("Hub sensor JSON: {}", e))?;
     let topic = MqttHubSensor::config_topic(DISCOVERY_PREFIX, TOPIC_PREFIX, &hub.location);
-    let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Hub sensor publish: {}", e))
+    publish_json(cli, &topic, &config).await
 }
 
 async fn publish_hub_state(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
     let topic = MqttHubSensor::state_topic(TOPIC_PREFIX, &hub.location);
-    let msg = mqtt::Message::new(topic, hub.stable_id.as_str(), mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Hub state publish: {}", e))
+    publish_str(cli, &topic, &hub.stable_id).await
 }
 
 async fn publish_hub_attributes(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
     let attrs = HubAttributes::from_hub(hub);
     let topic = MqttHubSensor::attributes_topic(TOPIC_PREFIX, &hub.location);
-    let json = serde_json::to_string(&attrs).map_err(|e| format!("Hub attrs JSON: {}", e))?;
-    let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-    cli.publish(msg)
-        .await
-        .map_err(|e| format!("Hub attrs publish: {}", e))
+    publish_json(cli, &topic, &attrs).await
 }
 
 async fn publish_hub_sensor(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
