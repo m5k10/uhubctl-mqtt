@@ -1,6 +1,5 @@
 use log::debug;
 use rusb::UsbContext;
-use std::collections::HashMap;
 use std::time::Duration;
 
 const USB_CTRL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -489,10 +488,6 @@ pub fn discovery_hubs(hubs: &[HubInfo]) -> Vec<&HubInfo> {
         .filter(|h| h.applicable || h.dual_location.is_some() || h.is_root_hub)
         .filter(|h| !(h.dual_location.is_some() && h.super_speed))
         .collect()
-}
-
-pub fn build_location_map(hubs: &[HubInfo]) -> HashMap<String, &HubInfo> {
-    hubs.iter().map(|h| (h.location.clone(), h)).collect()
 }
 
 pub fn find_hub_by_location<'a>(hubs: &'a [HubInfo], location: &str) -> Option<&'a HubInfo> {

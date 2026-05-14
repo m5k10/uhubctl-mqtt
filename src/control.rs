@@ -123,21 +123,6 @@ pub fn get_port_status_raw(
     Ok(u16::from_le_bytes([buf[0], buf[1]]))
 }
 
-/// Read port power status. Returns true if powered on.
-pub fn get_port_status(
-    handle: &rusb::DeviceHandle<rusb::Context>,
-    port: u8,
-    super_speed: bool,
-) -> Result<bool, String> {
-    let w_status = get_port_status_raw(handle, port)?;
-    let power_mask = if super_speed {
-        USB_SS_PORT_STAT_POWER
-    } else {
-        USB_PORT_STAT_POWER
-    };
-    Ok((w_status & power_mask) != 0)
-}
-
 fn read_connected_device_info(
     device: &rusb::Device<rusb::Context>,
     usb_ids: Option<&UsbIds>,

@@ -274,13 +274,6 @@ impl MqttPortBinarySensor {
         )
     }
 
-    pub fn state_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
-        format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port)
-    }
-
-    pub fn attributes_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
-        format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port)
-    }
 }
 
 impl MqttDiscoverySwitch {
