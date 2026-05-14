@@ -66,6 +66,10 @@ impl MqttDevice {
     }
 }
 
+fn safe_location(loc: &str) -> String {
+    loc.replace(['.', '-'], "_")
+}
+
 fn availability_topics(global_avail_topic: &str, per_hub_avail: &str) -> Vec<AvailabilityTopic> {
     vec![
         AvailabilityTopic {
@@ -178,7 +182,7 @@ impl MqttHubSensor {
         topic_prefix: &str,
         _discovery_prefix: &str,
     ) -> Self {
-        let safe_loc = hub.location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(&hub.location);
         let per_hub_avail = format!("{}/{}/status", topic_prefix, hub.location);
         MqttHubSensor {
             name: format!("USB Hub {}", hub.location),
@@ -191,7 +195,7 @@ impl MqttHubSensor {
     }
 
     pub fn config_topic(discovery_prefix: &str, topic_prefix: &str, hub_location: &str) -> String {
-        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(hub_location);
         format!(
             "{}/sensor/{}/{}_hub/config",
             discovery_prefix, topic_prefix, safe_loc
@@ -240,7 +244,7 @@ impl MqttPortBinarySensor {
         topic_prefix: &str,
         _discovery_prefix: &str,
     ) -> Self {
-        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(hub_location);
         let id = format!("{}_{}_p{}_sensor", topic_prefix, &safe_loc, port);
         let per_hub_avail = format!("{}/{}/status", topic_prefix, hub_location);
 
@@ -263,7 +267,7 @@ impl MqttPortBinarySensor {
         hub_location: &str,
         port: u8,
     ) -> String {
-        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(hub_location);
         format!(
             "{}/binary_sensor/{}/p{}_{}/config",
             discovery_prefix, topic_prefix, safe_loc, port
@@ -291,7 +295,7 @@ impl MqttDiscoverySwitch {
         topic_prefix: &str,
         _discovery_prefix: &str,
     ) -> Self {
-        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(hub_location);
         let id = format!("{}_{}_p{}", topic_prefix, &safe_loc, port);
         let base_topic = format!("{}/{}/port/{}", topic_prefix, hub_location, port);
         let per_hub_avail = format!("{}/{}/status", topic_prefix, hub_location);
@@ -317,7 +321,7 @@ impl MqttDiscoverySwitch {
         hub_location: &str,
         port: u8,
     ) -> String {
-        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let safe_loc = safe_location(hub_location);
         format!(
             "{}/switch/{}/p{}_{}/config",
             discovery_prefix, topic_prefix, safe_loc, port
