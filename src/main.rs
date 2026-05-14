@@ -76,6 +76,7 @@ struct TrackedHub {
     vendor: String,
     nports: u8,
     super_speed: bool,
+    is_root_hub: bool,
     dual_location: Option<String>,
     port_status: Vec<PortStatusInfo>,
     stable_id: String,
@@ -89,6 +90,7 @@ impl TrackedHub {
             vendor: h.vendor.clone(),
             nports: h.nports,
             super_speed: h.super_speed,
+            is_root_hub: h.is_root_hub,
             dual_location: h.dual_location.clone(),
             port_status: status,
             stable_id: h.stable_id.clone(),
@@ -135,6 +137,7 @@ fn synthetic_hub_added(hub: &TrackedHub) -> HubEvent {
         port_numbers: Vec::new(),
         ds: hub.ds.clone(),
         applicable: true,
+        is_root_hub: hub.is_root_hub,
         dual_location: hub.dual_location.clone(),
         stable_id: hub.stable_id.clone(),
     }))
@@ -238,7 +241,8 @@ async fn main() {
         Ok(hubs) => {
             let discovery = hub::discovery_hubs(&hubs);
             info!("Found {} hub(s)", discovery.len());
-            if discovery.is_empty() {
+            let controllable = discovery.iter().any(|h| h.applicable);
+            if !controllable && discovery.iter().any(|h| !h.is_root_hub) {
                 warn!(
                     "No hubs with per-port power switching found. If you expected hubs, check USB permissions — try running with sudo or install udev rules."
                 );

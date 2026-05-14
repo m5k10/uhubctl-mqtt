@@ -196,6 +196,103 @@ impl MqttHubSensor {
         format!("{}/{}/hub/attributes", topic_prefix, hub_location)
     }
 }
+/// Read-only port binary sensor for root hub ports (no power control).
+#[derive(Serialize)]
+pub struct MqttPortBinarySensor {
+    pub name: String,
+    #[serde(rename = "uniq_id")]
+    pub unique_id: String,
+    #[serde(rename = "stat_t")]
+    pub state_topic: String,
+    #[serde(rename = "json_attr_t")]
+    pub attributes_topic: String,
+    #[serde(rename = "avty")]
+    pub availability: Vec<AvailabilityTopic>,
+    #[serde(rename = "dev")]
+    pub device: MqttDevice,
+    #[serde(rename = "dev_cla")]
+    pub device_class: String,
+    #[serde(rename = "pl_on")]
+    pub payload_on: String,
+    #[serde(rename = "pl_off")]
+    pub payload_off: String,
+}
+
+impl MqttPortBinarySensor {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        hub_location: &str,
+        hub_vendor: &str,
+        vendor_name: &str,
+        product_name: &str,
+        port: u8,
+        global_avail_topic: &str,
+        topic_prefix: &str,
+        _discovery_prefix: &str,
+    ) -> Self {
+        let safe_loc = hub_location.replace(['.', '-'], "_");
+        let id = format!("{}_{}_p{}_sensor", topic_prefix, &safe_loc, port);
+        let per_hub_avail = format!("{}/{}/status", topic_prefix, hub_location);
+
+        MqttPortBinarySensor {
+            name: format!("USB Hub {} Port {}", hub_location, port),
+            unique_id: id,
+            state_topic: format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port),
+            attributes_topic: format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port),
+            availability: vec![
+                AvailabilityTopic {
+                    topic: global_avail_topic.to_string(),
+                    payload_available: "online".to_string(),
+                    payload_not_available: "offline".to_string(),
+                },
+                AvailabilityTopic {
+                    topic: per_hub_avail,
+                    payload_available: "online".to_string(),
+                    payload_not_available: "offline".to_string(),
+                },
+            ],
+            device: MqttDevice {
+                identifiers: vec![format!("{}_{}", topic_prefix, &safe_loc)],
+                name: format!("USB Hub {}", hub_location),
+                model: if !product_name.is_empty() {
+                    product_name.to_string()
+                } else {
+                    format!("USB Hub ({})", hub_vendor)
+                },
+                manufacturer: if !vendor_name.is_empty() {
+                    vendor_name.to_string()
+                } else {
+                    "uhubctl-mqtt".to_string()
+                },
+            },
+            device_class: "connectivity".to_string(),
+            payload_on: "ON".to_string(),
+            payload_off: "OFF".to_string(),
+        }
+    }
+
+    pub fn config_topic(
+        discovery_prefix: &str,
+        topic_prefix: &str,
+        hub_location: &str,
+        port: u8,
+    ) -> String {
+        let safe_loc = hub_location.replace(['.', '-'], "_");
+        format!(
+            "{}/binary_sensor/{}/p{}_{}/config",
+            discovery_prefix, topic_prefix, safe_loc, port
+        )
+    }
+
+    pub fn state_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
+        format!("{}/{}/port/{}/connected", topic_prefix, hub_location, port)
+    }
+
+    pub fn attributes_topic(topic_prefix: &str, hub_location: &str, port: u8) -> String {
+        format!("{}/{}/port/{}/attributes", topic_prefix, hub_location, port)
+    }
+}
+
 impl MqttDiscoverySwitch {
     #[allow(clippy::too_many_arguments)]
     pub fn new(

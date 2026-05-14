@@ -184,10 +184,7 @@ fn read_connected_device_info(
         info.product = name.to_string();
     }
 
-    info.max_power_ma = device
-        .config_descriptor(0)
-        .ok()
-        .map(|cd| cd.max_power());
+    info.max_power_ma = device.config_descriptor(0).ok().map(|cd| cd.max_power());
 
     info.description = format!(
         "{}{}{}{}",

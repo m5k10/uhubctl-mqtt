@@ -5,7 +5,9 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, Instant};
 
 use crate::control::PortStatusInfo;
-use crate::ha::{HubAttributes, MqttDiscoverySwitch, MqttHubSensor, PortAttributes};
+use crate::ha::{
+    HubAttributes, MqttDiscoverySwitch, MqttHubSensor, MqttPortBinarySensor, PortAttributes,
+};
 use crate::hub::HubInfo;
 
 const DISCOVERY_PREFIX: &str = "homeassistant";
@@ -91,23 +93,53 @@ fn parse_command(topic: &str, payload: &str) -> Option<MainCmd> {
 
 async fn publish_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
     for port in 1..=hub.nports {
-        let config = MqttDiscoverySwitch::new(
-            &hub.location,
-            &hub.vendor,
-            &hub.ds.vendor,
-            &hub.ds.product,
-            port,
-            AVAIL_TOPIC,
-            TOPIC_PREFIX,
-            DISCOVERY_PREFIX,
-        );
-        let json = serde_json::to_string(&config).map_err(|e| format!("Discovery JSON: {}", e))?;
-        let topic =
-            MqttDiscoverySwitch::config_topic(DISCOVERY_PREFIX, TOPIC_PREFIX, &hub.location, port);
-        let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
-        cli.publish(msg)
-            .await
-            .map_err(|e| format!("Discovery publish: {}", e))?;
+        if hub.is_root_hub {
+            let config = MqttPortBinarySensor::new(
+                &hub.location,
+                &hub.vendor,
+                &hub.ds.vendor,
+                &hub.ds.product,
+                port,
+                AVAIL_TOPIC,
+                TOPIC_PREFIX,
+                DISCOVERY_PREFIX,
+            );
+            let json =
+                serde_json::to_string(&config).map_err(|e| format!("Discovery JSON: {}", e))?;
+            let topic = MqttPortBinarySensor::config_topic(
+                DISCOVERY_PREFIX,
+                TOPIC_PREFIX,
+                &hub.location,
+                port,
+            );
+            let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
+            cli.publish(msg)
+                .await
+                .map_err(|e| format!("Discovery publish: {}", e))?;
+        } else {
+            let config = MqttDiscoverySwitch::new(
+                &hub.location,
+                &hub.vendor,
+                &hub.ds.vendor,
+                &hub.ds.product,
+                port,
+                AVAIL_TOPIC,
+                TOPIC_PREFIX,
+                DISCOVERY_PREFIX,
+            );
+            let json =
+                serde_json::to_string(&config).map_err(|e| format!("Discovery JSON: {}", e))?;
+            let topic = MqttDiscoverySwitch::config_topic(
+                DISCOVERY_PREFIX,
+                TOPIC_PREFIX,
+                &hub.location,
+                port,
+            );
+            let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
+            cli.publish(msg)
+                .await
+                .map_err(|e| format!("Discovery publish: {}", e))?;
+        }
     }
     Ok(())
 }
@@ -125,6 +157,20 @@ async fn publish_state(
         .await
         .map_err(|e| format!("State publish: {}", e))?;
     Ok(())
+}
+
+async fn publish_connected_state(
+    cli: &mqtt::AsyncClient,
+    hub_location: &str,
+    port: u8,
+    connected: bool,
+) -> Result<(), String> {
+    let state = if connected { "ON" } else { "OFF" };
+    let topic = format!("{}/{}/port/{}/connected", TOPIC_PREFIX, hub_location, port);
+    let msg = mqtt::Message::new(topic, state, mqtt::QoS::AtLeastOnce);
+    cli.publish(msg)
+        .await
+        .map_err(|e| format!("Connected state publish: {}", e))
 }
 
 async fn publish_attributes(
@@ -275,6 +321,7 @@ async fn process_event(
     cli: &mqtt::AsyncClient,
     event: HubEvent,
     known_hubs: &mut Vec<String>,
+    known_root_hubs: &mut Vec<String>,
 ) -> Result<(), String> {
     match event {
         HubEvent::HubAdded(hub) => {
@@ -285,12 +332,16 @@ async fn process_event(
             publish_hub_sensor(cli, &hub).await?;
             publish_hub_availability(cli, &hub.location, true).await?;
             publish_discovery(cli, &hub).await?;
+            if hub.is_root_hub {
+                known_root_hubs.push(hub.location.clone());
+            }
             known_hubs.push(hub.location);
         }
         HubEvent::HubRemoved(location) => {
             info!("Hub removed: {}", location);
             publish_hub_availability(cli, &location, false).await?;
             known_hubs.retain(|l| l != &location);
+            known_root_hubs.retain(|l| l != &location);
         }
         HubEvent::PortPowerChanged {
             hub_location,
@@ -311,6 +362,9 @@ async fn process_event(
             status,
         } => {
             publish_attributes(cli, &hub_location, port, &status).await?;
+            if known_root_hubs.contains(&hub_location) {
+                publish_connected_state(cli, &hub_location, port, status.connected).await?;
+            }
         }
         HubEvent::Shutdown => {
             info!("Shutdown signal received, publishing offline...");
@@ -340,6 +394,7 @@ async fn run_session(
     setup_command_callback(&cli, cmd_tx);
 
     let mut known_hubs: Vec<String> = Vec::new();
+    let mut known_root_hubs: Vec<String> = Vec::new();
     publish_birth(&cli, &known_hubs).await?;
 
     let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
@@ -350,12 +405,12 @@ async fn run_session(
                 match event {
                     Ok(event) => {
                         if matches!(event, HubEvent::Shutdown) {
-                            if let Err(e) = process_event(&cli, event, &mut known_hubs).await {
+                            if let Err(e) = process_event(&cli, event, &mut known_hubs, &mut known_root_hubs).await {
                                 error!("Shutdown publish error: {}", e);
                             }
                             break;
                         }
-                        if let Err(e) = process_event(&cli, event, &mut known_hubs).await {
+                        if let Err(e) = process_event(&cli, event, &mut known_hubs, &mut known_root_hubs).await {
                             error!("Event error: {}", e);
                         }
                     }

@@ -33,6 +33,7 @@ pub struct HubInfo {
     pub port_numbers: Vec<u8>,
     pub ds: DescriptorStrings,
     pub applicable: bool,
+    pub is_root_hub: bool,
     pub dual_location: Option<String>,
     pub stable_id: String,
 }
@@ -389,6 +390,7 @@ pub fn scan_hubs(context: &rusb::Context) -> Result<Vec<HubInfo>, String> {
         let location = build_location(bus, &port_numbers);
         let vendor = format!("{:04x}:{:04x}", vid, pid);
         let applicable = lpsm == HUB_CHAR_INDV_PORT_LPSM;
+        let is_root_hub = port_numbers.is_empty();
 
         hubs.push(HubInfo {
             device: Some(device.clone()),
@@ -402,11 +404,14 @@ pub fn scan_hubs(context: &rusb::Context) -> Result<Vec<HubInfo>, String> {
             port_numbers,
             ds: DescriptorStrings::default(),
             applicable,
+            is_root_hub,
             dual_location: None,
             stable_id: String::new(),
         });
 
-        if applicable && let Some(hub) = hubs.last_mut() {
+        if (applicable || is_root_hub)
+            && let Some(hub) = hubs.last_mut()
+        {
             hub.ds = get_device_description(&device);
         }
     }
@@ -420,7 +425,7 @@ pub fn scan_hubs(context: &rusb::Context) -> Result<Vec<HubInfo>, String> {
         .collect();
 
     let raw_count = hubs.len();
-    hubs.retain(|h| h.applicable || dual_locs.contains(&h.location));
+    hubs.retain(|h| h.applicable || dual_locs.contains(&h.location) || h.is_root_hub);
     debug!(
         "scan_hubs: {} raw hubs, {} after retain",
         raw_count,
@@ -465,7 +470,7 @@ pub fn scan_hubs(context: &rusb::Context) -> Result<Vec<HubInfo>, String> {
 
 pub fn discovery_hubs(hubs: &[HubInfo]) -> Vec<&HubInfo> {
     hubs.iter()
-        .filter(|h| h.applicable || h.dual_location.is_some())
+        .filter(|h| h.applicable || h.dual_location.is_some() || h.is_root_hub)
         .filter(|h| !(h.dual_location.is_some() && h.super_speed))
         .collect()
 }
