@@ -1,4 +1,6 @@
 use crate::hub::{HubInfo, find_hub_by_location, scan_hubs};
+use crate::usb_ids::UsbIds;
+use rusb::UsbContext;
 use serde::Serialize;
 use std::time::Duration;
 
@@ -9,7 +11,21 @@ pub const USB_PORT_STAT_POWER: u16 = 0x0100;
 pub const USB_SS_PORT_STAT_POWER: u16 = 0x0200;
 pub const USB_PORT_STAT_CONNECTION: u16 = 0x0001;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct ConnectedDeviceInfo {
+    pub vid_pid: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub vendor: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub product: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub serial: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    pub max_power_ma: Option<u16>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct PortStatusInfo {
     pub connected: bool,
     pub powered: bool,
@@ -19,6 +35,8 @@ pub struct PortStatusInfo {
     pub speed: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub link_state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connected_device: Option<ConnectedDeviceInfo>,
 }
 
 fn speed_string(w_status: u16, super_speed: bool) -> String {
@@ -81,6 +99,7 @@ pub fn decode_port_status(w_status: u16, super_speed: bool) -> PortStatusInfo {
         } else {
             String::new()
         },
+        connected_device: None,
     }
 }
 
@@ -119,44 +138,142 @@ pub fn get_port_status(
     Ok((w_status & power_mask) != 0)
 }
 
-/// Read decoded port status for all ports on a hub.
+fn read_connected_device_info(
+    device: &rusb::Device<rusb::Context>,
+    usb_ids: Option<&UsbIds>,
+) -> ConnectedDeviceInfo {
+    let desc = match device.device_descriptor() {
+        Ok(d) => d,
+        Err(_) => return ConnectedDeviceInfo::default(),
+    };
+    let vid = desc.vendor_id();
+    let pid = desc.product_id();
+    let mut info = ConnectedDeviceInfo {
+        vid_pid: format!("{:04x}:{:04x}", vid, pid),
+        ..Default::default()
+    };
+    if let Ok(handle) = device.open() {
+        let _ = handle.set_auto_detach_kernel_driver(true);
+        if desc.manufacturer_string_index().is_some()
+            && let Ok(s) = handle.read_manufacturer_string_ascii(&desc)
+        {
+            info.vendor = s.trim().to_string();
+        }
+        if desc.product_string_index().is_some()
+            && let Ok(s) = handle.read_product_string_ascii(&desc)
+        {
+            info.product = s.trim().to_string();
+        }
+        if desc.serial_number_string_index().is_some()
+            && let Ok(s) = handle.read_serial_number_string_ascii(&desc)
+        {
+            info.serial = s.trim().to_string();
+        }
+    }
+
+    if info.vendor.is_empty()
+        && let Some(ids) = usb_ids
+        && let Some(name) = ids.lookup_vendor(vid)
+    {
+        info.vendor = name.to_string();
+    }
+    if info.product.is_empty()
+        && let Some(ids) = usb_ids
+        && let Some(name) = ids.lookup_product(vid, pid)
+    {
+        info.product = name.to_string();
+    }
+
+    info.max_power_ma = device
+        .config_descriptor(0)
+        .ok()
+        .map(|cd| cd.max_power());
+
+    info.description = format!(
+        "{}{}{}{}",
+        info.vid_pid,
+        if info.vendor.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", info.vendor)
+        },
+        if info.product.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", info.product)
+        },
+        if info.serial.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", info.serial)
+        },
+    );
+    info
+}
+
+pub fn build_device_tree(
+    context: &rusb::Context,
+    usb_ids: Option<&UsbIds>,
+) -> Vec<(u8, Vec<u8>, ConnectedDeviceInfo)> {
+    let Ok(devices) = context.devices() else {
+        return vec![];
+    };
+    let mut tree = Vec::new();
+    for device in devices.iter() {
+        let Ok(pn) = device.port_numbers() else {
+            continue;
+        };
+        if pn.is_empty() {
+            continue; // skip root hubs
+        }
+        let bus = device.bus_number();
+        let info = read_connected_device_info(&device, usb_ids);
+        tree.push((bus, pn, info));
+    }
+    tree
+}
+
+fn find_connected_device<'a>(
+    bus: u8,
+    hub_pn: &[u8],
+    port: u8,
+    tree: &'a [(u8, Vec<u8>, ConnectedDeviceInfo)],
+) -> Option<&'a ConnectedDeviceInfo> {
+    tree.iter()
+        .find(|(b, pn, _)| {
+            *b == bus
+                && pn.len() == hub_pn.len() + 1
+                && pn[..hub_pn.len()] == hub_pn[..]
+                && pn[hub_pn.len()] == port
+        })
+        .map(|(_, _, info)| info)
+}
+
+/// Read decoded port status for all ports on a hub, enriched with connected device info.
 pub fn read_all_port_status(
     device: &rusb::Device<rusb::Context>,
     nports: u8,
     super_speed: bool,
+    hub_bus: u8,
+    hub_port_numbers: &[u8],
+    device_tree: &[(u8, Vec<u8>, ConnectedDeviceInfo)],
 ) -> Vec<PortStatusInfo> {
     let handle = match device.open() {
         Ok(h) => h,
-        Err(_) => {
-            return vec![
-                PortStatusInfo {
-                    connected: false,
-                    powered: false,
-                    enabled: false,
-                    suspended: false,
-                    overcurrent: false,
-                    speed: String::new(),
-                    link_state: String::new(),
-                };
-                nports as usize
-            ];
-        }
+        Err(_) => return vec![PortStatusInfo::default(); nports as usize],
     };
     let _ = handle.set_auto_detach_kernel_driver(true);
     let mut info = Vec::with_capacity(nports as usize);
     for port in 1..=nports {
-        match get_port_status_raw(&handle, port) {
-            Ok(w_status) => info.push(decode_port_status(w_status, super_speed)),
-            Err(_) => info.push(PortStatusInfo {
-                connected: false,
-                powered: false,
-                enabled: false,
-                suspended: false,
-                overcurrent: false,
-                speed: String::new(),
-                link_state: String::new(),
-            }),
+        let mut st = match get_port_status_raw(&handle, port) {
+            Ok(w_status) => decode_port_status(w_status, super_speed),
+            Err(_) => PortStatusInfo::default(),
+        };
+        if st.connected {
+            st.connected_device =
+                find_connected_device(hub_bus, hub_port_numbers, port, device_tree).cloned();
         }
+        info.push(st);
     }
     info
 }

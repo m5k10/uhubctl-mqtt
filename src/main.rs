@@ -4,6 +4,7 @@ mod control;
 mod ha;
 mod hub;
 mod mqtt;
+mod usb_ids;
 
 use clap::Parser;
 use log::{LevelFilter, error, info, warn};
@@ -15,6 +16,7 @@ use tokio::sync::{broadcast, mpsc};
 use control::PortStatusInfo;
 use hub::{DescriptorStrings, HubInfo};
 use mqtt::{HubEvent, MainCmd};
+use usb_ids::UsbIds;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -95,24 +97,25 @@ impl TrackedHub {
     }
 }
 
-fn hubs_to_map(hubs: &[HubInfo]) -> HashMap<String, TrackedHub> {
+fn hubs_to_map(
+    context: &rusb::Context,
+    hubs: &[HubInfo],
+    usb_ids: Option<&UsbIds>,
+) -> HashMap<String, TrackedHub> {
+    let device_tree = control::build_device_tree(context, usb_ids);
     let mut map = HashMap::new();
     for h in hub::discovery_hubs(hubs) {
         let status = if let Some(ref dev) = h.device {
-            control::read_all_port_status(dev, h.nports, h.super_speed)
+            control::read_all_port_status(
+                dev,
+                h.nports,
+                h.super_speed,
+                h.bus,
+                &h.port_numbers,
+                &device_tree,
+            )
         } else {
-            vec![
-                PortStatusInfo {
-                    connected: false,
-                    powered: false,
-                    enabled: false,
-                    suspended: false,
-                    overcurrent: false,
-                    speed: String::new(),
-                    link_state: String::new(),
-                };
-                h.nports as usize
-            ]
+            vec![PortStatusInfo::default(); h.nports as usize]
         };
         map.insert(h.location.clone(), TrackedHub::from_hub_info(h, status));
     }
@@ -137,6 +140,19 @@ fn synthetic_hub_added(hub: &TrackedHub) -> HubEvent {
     }))
 }
 
+fn format_port_status(loc: &str, port: u8, cur: &PortStatusInfo) -> String {
+    let conn = if cur.connected {
+        match &cur.connected_device {
+            Some(d) => format!("connected, {}, [{}]", cur.speed, d.description),
+            None => "connected".to_string(),
+        }
+    } else {
+        "not connected".to_string()
+    };
+    let power = if cur.powered { "powered" } else { "power off" };
+    format!("Hub {} port {}: {}, {}", loc, port, conn, power)
+}
+
 fn emit_hub_diffs(
     prev: &HashMap<String, TrackedHub>,
     curr: &HashMap<String, TrackedHub>,
@@ -154,6 +170,7 @@ fn emit_hub_diffs(
                 {
                     if cur != prv {
                         let port = (port_idx + 1) as u8;
+                        info!("{}", format_port_status(loc, port, cur));
                         if cur.powered != prv.powered {
                             let _ = tx.send(HubEvent::PortPowerChanged {
                                 hub_location: loc.clone(),
@@ -166,13 +183,6 @@ fn emit_hub_diffs(
                             port,
                             status: cur.clone(),
                         });
-                        if cur.connected != prv.connected {
-                            if cur.connected {
-                                info!("Device connected to port {} on hub {}", port, loc);
-                            } else {
-                                info!("Device disconnected from port {} on hub {}", port, loc);
-                            }
-                        }
                     }
                 }
             }
@@ -218,6 +228,8 @@ async fn main() {
         }
     };
 
+    let usb_ids = UsbIds::load();
+
     let mut scan_interval = tokio::time::interval(Duration::from_secs(args.interval as u64));
     let mut last_map: HashMap<String, TrackedHub> = HashMap::new();
 
@@ -237,7 +249,15 @@ async fn main() {
                     h.location, h.nports, h.stable_id, h.ds.description
                 );
             }
-            let curr = hubs_to_map(&hubs);
+            let curr = hubs_to_map(&context, &hubs, usb_ids.as_ref());
+            for hub in curr.values() {
+                for (port_idx, status) in hub.port_status.iter().enumerate() {
+                    info!(
+                        "  {}",
+                        format_port_status(&hub.location, (port_idx + 1) as u8, status)
+                    );
+                }
+            }
             emit_hub_diffs(&last_map, &curr, &tx_event);
             last_map = curr;
         }
@@ -275,7 +295,7 @@ async fn main() {
             _ = scan_interval.tick() => {
                 match hub::scan_hubs(&context) {
                     Ok(hubs) => {
-                        let curr = hubs_to_map(&hubs);
+                        let curr = hubs_to_map(&context, &hubs, usb_ids.as_ref());
                         emit_hub_diffs(&last_map, &curr, &tx_event);
                         last_map = curr;
                     }
@@ -286,7 +306,7 @@ async fn main() {
                 info!("Resync triggered, re-publishing all hubs...");
                 match hub::scan_hubs(&context) {
                     Ok(hubs) => {
-                        let curr = hubs_to_map(&hubs);
+                        let curr = hubs_to_map(&context, &hubs, usb_ids.as_ref());
                         for hub in curr.values() {
                             let _ = tx_event.send(synthetic_hub_added(hub));
                             for (port_idx, status) in hub.port_status.iter().enumerate() {

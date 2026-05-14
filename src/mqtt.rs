@@ -5,7 +5,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, Instant};
 
 use crate::control::PortStatusInfo;
-use crate::ha::{MqttDiscoverySwitch, PortAttributes};
+use crate::ha::{HubAttributes, MqttDiscoverySwitch, MqttHubSensor, PortAttributes};
 use crate::hub::HubInfo;
 
 const DISCOVERY_PREFIX: &str = "homeassistant";
@@ -133,6 +133,24 @@ async fn publish_attributes(
     port: u8,
     status: &PortStatusInfo,
 ) -> Result<(), String> {
+    let (
+        connected_vid_pid,
+        connected_vendor,
+        connected_product,
+        connected_serial,
+        connected_description,
+        connected_max_power_ma,
+    ) = match &status.connected_device {
+        Some(d) => (
+            d.vid_pid.clone(),
+            d.vendor.clone(),
+            d.product.clone(),
+            d.serial.clone(),
+            d.description.clone(),
+            d.max_power_ma,
+        ),
+        None => Default::default(),
+    };
     let attrs = PortAttributes {
         hub_location: hub_location.to_string(),
         port_number: port,
@@ -143,6 +161,12 @@ async fn publish_attributes(
         overcurrent: status.overcurrent,
         speed: status.speed.clone(),
         link_state: status.link_state.clone(),
+        connected_vid_pid,
+        connected_vendor,
+        connected_product,
+        connected_serial,
+        connected_description,
+        connected_max_power_ma,
     };
     let topic = MqttDiscoverySwitch::attributes_topic(TOPIC_PREFIX, hub_location, port);
     let json = serde_json::to_string(&attrs).map_err(|e| format!("Attrs JSON: {}", e))?;
@@ -150,6 +174,40 @@ async fn publish_attributes(
     cli.publish(msg)
         .await
         .map_err(|e| format!("Attrs publish: {}", e))
+}
+
+async fn publish_hub_discovery(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
+    let config = MqttHubSensor::new(hub, AVAIL_TOPIC, TOPIC_PREFIX, DISCOVERY_PREFIX);
+    let json = serde_json::to_string(&config).map_err(|e| format!("Hub sensor JSON: {}", e))?;
+    let topic = MqttHubSensor::config_topic(DISCOVERY_PREFIX, TOPIC_PREFIX, &hub.location);
+    let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
+    cli.publish(msg)
+        .await
+        .map_err(|e| format!("Hub sensor publish: {}", e))
+}
+
+async fn publish_hub_state(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
+    let topic = MqttHubSensor::state_topic(TOPIC_PREFIX, &hub.location);
+    let msg = mqtt::Message::new(topic, hub.stable_id.as_str(), mqtt::QoS::AtLeastOnce);
+    cli.publish(msg)
+        .await
+        .map_err(|e| format!("Hub state publish: {}", e))
+}
+
+async fn publish_hub_attributes(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
+    let attrs = HubAttributes::from_hub(hub);
+    let topic = MqttHubSensor::attributes_topic(TOPIC_PREFIX, &hub.location);
+    let json = serde_json::to_string(&attrs).map_err(|e| format!("Hub attrs JSON: {}", e))?;
+    let msg = mqtt::Message::new(topic, json, mqtt::QoS::AtLeastOnce);
+    cli.publish(msg)
+        .await
+        .map_err(|e| format!("Hub attrs publish: {}", e))
+}
+
+async fn publish_hub_sensor(cli: &mqtt::AsyncClient, hub: &HubInfo) -> Result<(), String> {
+    publish_hub_discovery(cli, hub).await?;
+    publish_hub_state(cli, hub).await?;
+    publish_hub_attributes(cli, hub).await
 }
 
 async fn publish_hub_availability(
@@ -224,6 +282,7 @@ async fn process_event(
                 "Hub added: {} ({} ports) stable_id={}",
                 hub.location, hub.nports, hub.stable_id
             );
+            publish_hub_sensor(cli, &hub).await?;
             publish_hub_availability(cli, &hub.location, true).await?;
             publish_discovery(cli, &hub).await?;
             known_hubs.push(hub.location);

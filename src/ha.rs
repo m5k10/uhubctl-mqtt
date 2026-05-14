@@ -1,3 +1,4 @@
+use crate::hub::HubInfo;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -58,8 +59,143 @@ pub struct PortAttributes {
     pub speed: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub link_state: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_vid_pid: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_vendor: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_product: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_serial: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub connected_description: String,
+    pub connected_max_power_ma: Option<u16>,
 }
 
+#[derive(Serialize)]
+pub struct MqttHubSensor {
+    pub name: String,
+    #[serde(rename = "uniq_id")]
+    pub unique_id: String,
+    #[serde(rename = "stat_t")]
+    pub state_topic: String,
+    #[serde(rename = "json_attr_t")]
+    pub attributes_topic: String,
+    #[serde(rename = "avty")]
+    pub availability: Vec<AvailabilityTopic>,
+    #[serde(rename = "dev")]
+    pub device: MqttDevice,
+}
+
+#[derive(Serialize)]
+pub struct HubAttributes {
+    pub vid_pid: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub vendor: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub product: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub serial: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    pub location: String,
+    pub stable_id: String,
+    pub bus: u8,
+    pub super_speed: bool,
+    pub nports: u8,
+    pub lpsm: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub container_id: String,
+    pub applicable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dual_location: Option<String>,
+}
+
+impl HubAttributes {
+    pub fn from_hub(hub: &HubInfo) -> Self {
+        let lpsm_str = match hub.lpsm {
+            1 => "ppps",
+            0 => "ganged",
+            _ => "nops",
+        };
+        HubAttributes {
+            vid_pid: hub.vendor.clone(),
+            vendor: hub.ds.vendor.clone(),
+            product: hub.ds.product.clone(),
+            serial: hub.ds.serial.clone(),
+            description: hub.ds.description.clone(),
+            location: hub.location.clone(),
+            stable_id: hub.stable_id.clone(),
+            bus: hub.bus,
+            super_speed: hub.super_speed,
+            nports: hub.nports,
+            lpsm: lpsm_str.to_string(),
+            container_id: hub.container_id.clone(),
+            applicable: hub.applicable,
+            dual_location: hub.dual_location.clone(),
+        }
+    }
+}
+
+impl MqttHubSensor {
+    pub fn new(
+        hub: &HubInfo,
+        global_avail_topic: &str,
+        topic_prefix: &str,
+        _discovery_prefix: &str,
+    ) -> Self {
+        let safe_loc = hub.location.replace(['.', '-'], "_");
+        let per_hub_avail = format!("{}/{}/status", topic_prefix, hub.location);
+        MqttHubSensor {
+            name: format!("USB Hub {}", hub.location),
+            unique_id: format!("{}_{}_hub", topic_prefix, safe_loc),
+            state_topic: format!("{}/{}/hub/state", topic_prefix, hub.location),
+            attributes_topic: format!("{}/{}/hub/attributes", topic_prefix, hub.location),
+            availability: vec![
+                AvailabilityTopic {
+                    topic: global_avail_topic.to_string(),
+                    payload_available: "online".to_string(),
+                    payload_not_available: "offline".to_string(),
+                },
+                AvailabilityTopic {
+                    topic: per_hub_avail,
+                    payload_available: "online".to_string(),
+                    payload_not_available: "offline".to_string(),
+                },
+            ],
+            device: MqttDevice {
+                identifiers: vec![format!("{}_{}", topic_prefix, safe_loc)],
+                name: format!("USB Hub {}", hub.location),
+                model: if !hub.ds.product.is_empty() {
+                    hub.ds.product.clone()
+                } else {
+                    format!("USB Hub ({})", hub.vendor)
+                },
+                manufacturer: if !hub.ds.vendor.is_empty() {
+                    hub.ds.vendor.clone()
+                } else {
+                    "uhubctl-mqtt".to_string()
+                },
+            },
+        }
+    }
+
+    pub fn config_topic(discovery_prefix: &str, topic_prefix: &str, hub_location: &str) -> String {
+        let safe_loc = hub_location.replace(['.', '-'], "_");
+        format!(
+            "{}/sensor/{}/{}_hub/config",
+            discovery_prefix, topic_prefix, safe_loc
+        )
+    }
+
+    pub fn state_topic(topic_prefix: &str, hub_location: &str) -> String {
+        format!("{}/{}/hub/state", topic_prefix, hub_location)
+    }
+
+    pub fn attributes_topic(topic_prefix: &str, hub_location: &str) -> String {
+        format!("{}/{}/hub/attributes", topic_prefix, hub_location)
+    }
+}
 impl MqttDiscoverySwitch {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
