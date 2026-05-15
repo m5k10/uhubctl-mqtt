@@ -79,8 +79,8 @@ fn read_container_id(
         if cap_type == 0x04 && cap_len >= 20 && offset + 20 <= buf.len() {
             let id_start = offset + 4;
             let mut hex = String::with_capacity(32);
-            for i in 0..16 {
-                hex.push_str(&format!("{:02x}", buf[id_start + i]));
+            for j in 0..16 {
+                hex.push_str(&format!("{:02x}", buf[id_start + j]));
             }
             debug!("  {:04x}:{:04x} BOS container ID found", vid, pid);
             return Ok(hex);
