@@ -14,6 +14,7 @@ cargo build --release
 ### Running
 ```bash
 cargo run -- --mqtt-url mqtt://localhost:1883 --mqtt-username user --mqtt-password pass
+cargo run -- --mqtt-url mqtt://localhost:1883 --node-id my-pc  # explicit node ID
 ```
 
 ### Testing
@@ -32,7 +33,7 @@ cargo fmt && cargo clippy && cargo test
 ## Code Style Guidelines
 
 - Follow onewire-bridge-cli conventions (see AGENTS.md in that project)
-- Module structure: hub.rs, control.rs, ha.rs, mqtt.rs, monitor.rs, main.rs
+- Module structure: hub.rs, control.rs, ha.rs, mqtt.rs, usb_ids.rs, main.rs
 - Use `log` + `env_logger` for logging
 - CLI via `clap` derive
 - MQTT via `paho-mqtt` `AsyncClient`
@@ -46,3 +47,4 @@ cargo fmt && cargo clippy && cargo test
 - **clap 4.6**: CLI argument parsing
 - **serde 1** + **serde_json 1**: JSON serialization
 - **log 0.4** + **env_logger 0.11**: Logging
+- **hostname 0.4**: Default node ID from system hostname

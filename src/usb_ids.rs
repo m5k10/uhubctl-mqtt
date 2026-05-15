@@ -31,16 +31,15 @@ impl UsbIds {
             }
 
             if line.starts_with('\t') {
-                let trimmed = line.trim_start_matches('\t');
-                if trimmed.len() < 4 {
+                let tab_count = line.bytes().take_while(|&b| b == b'\t').count();
+                if tab_count > 1 {
                     continue;
                 }
-                let indent = line.len() - trimmed.len();
-                if indent >= 2 {
-                    continue;
-                }
-                if let Ok(pid) = u16::from_str_radix(&trimmed[..4], 16) {
-                    let name = trimmed[4..].trim().to_string();
+                let content = line[tab_count..].trim();
+                if content.len() >= 4
+                    && let Ok(pid) = u16::from_str_radix(&content[..4], 16)
+                {
+                    let name = content[4..].trim().to_string();
                     if !name.is_empty()
                         && let Some(vid) = current_vid
                     {
