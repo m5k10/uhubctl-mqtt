@@ -197,17 +197,23 @@ fn emit_hub_diffs(
                         let port = (port_idx + 1) as u8;
                         info!("{}", format_port_status(loc, port, cur));
                         if cur.powered != prv.powered {
-                            try_send_event(tx, HubEvent::PortPowerChanged {
+                            try_send_event(
+                                tx,
+                                HubEvent::PortPowerChanged {
+                                    hub_location: loc.clone(),
+                                    port,
+                                    powered: cur.powered,
+                                },
+                            );
+                        }
+                        try_send_event(
+                            tx,
+                            HubEvent::PortStatusChanged {
                                 hub_location: loc.clone(),
                                 port,
-                                powered: cur.powered,
-                            });
-                        }
-                        try_send_event(tx, HubEvent::PortStatusChanged {
-                            hub_location: loc.clone(),
-                            port,
-                            status: cur.clone(),
-                        });
+                                status: cur.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -215,11 +221,14 @@ fn emit_hub_diffs(
             try_send_event(tx, synthetic_hub_added(hub));
             for (port_idx, status) in hub.port_status.iter().enumerate() {
                 let port = (port_idx + 1) as u8;
-                try_send_event(tx, HubEvent::PortStatusChanged {
-                    hub_location: loc.clone(),
-                    port,
-                    status: status.clone(),
-                });
+                try_send_event(
+                    tx,
+                    HubEvent::PortStatusChanged {
+                        hub_location: loc.clone(),
+                        port,
+                        status: status.clone(),
+                    },
+                );
             }
         }
     }

@@ -272,7 +272,10 @@ pub fn control_port_power(
         && let Some(dual) = find_hub_by_location(&hubs, dual_loc)
         && let Err(e) = set_port_power(dual, port, on)
     {
-        warn!("Dual hub {} port {} power change failed: {}", dual_loc, port, e);
+        warn!(
+            "Dual hub {} port {} power change failed: {}",
+            dual_loc, port, e
+        );
     }
 
     Ok(())
