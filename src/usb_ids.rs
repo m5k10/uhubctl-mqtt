@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::collections::HashMap;
 
 pub struct UsbIds {
@@ -15,10 +15,9 @@ impl UsbIds {
                 info!("Loaded USB IDs from {}", path);
                 return Some(Self::parse(&content));
             }
-            warn!("USB IDs file not found: {}", path);
         }
         let tried = paths.join(", ");
-        debug!("No USB IDs file found at {}", tried);
+        warn!("No USB IDs file found at {}", tried);
         None
     }
 
