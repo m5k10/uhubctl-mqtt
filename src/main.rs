@@ -79,6 +79,12 @@ struct Args {
         help = "Unique node identifier (defaults to hostname)"
     )]
     node_id: String,
+
+    #[arg(
+        long,
+        help = "Path to USB IDs database (can be specified multiple times; default: /usr/share/usb.ids, /usr/share/hwdata/usb.ids)"
+    )]
+    usb_ids_path: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -242,7 +248,17 @@ async fn main() {
         }
     };
 
-    let usb_ids = UsbIds::load();
+    let ids_paths = if args.usb_ids_path.is_empty() {
+        None
+    } else {
+        Some(
+            args.usb_ids_path
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let usb_ids = UsbIds::load(ids_paths.as_deref());
 
     let mut scan_interval = tokio::time::interval(Duration::from_secs(args.interval as u64));
     let mut last_map: HashMap<String, TrackedHub> = HashMap::new();

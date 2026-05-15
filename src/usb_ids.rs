@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::collections::HashMap;
 
 pub struct UsbIds {
@@ -7,15 +7,18 @@ pub struct UsbIds {
 }
 
 impl UsbIds {
-    pub fn load() -> Option<Self> {
-        let paths = ["/usr/share/usb.ids", "/usr/share/hwdata/usb.ids"];
-        for path in &paths {
+    pub fn load(custom_paths: Option<&[&str]>) -> Option<Self> {
+        let default_paths: &[&str] = &["/usr/share/usb.ids", "/usr/share/hwdata/usb.ids"];
+        let paths = custom_paths.unwrap_or(default_paths);
+        for path in paths {
             if let Ok(content) = std::fs::read_to_string(path) {
                 info!("Loaded USB IDs from {}", path);
                 return Some(Self::parse(&content));
             }
+            warn!("USB IDs file not found: {}", path);
         }
-        debug!("No USB IDs file found at /usr/share/usb.ids or /usr/share/hwdata/usb.ids");
+        let tried = paths.join(", ");
+        debug!("No USB IDs file found at {}", tried);
         None
     }
 
@@ -81,5 +84,54 @@ impl UsbIds {
 
     pub fn lookup_product(&self, vid: u16, pid: u16) -> Option<&str> {
         self.products.get(&(vid, pid)).map(|s| s.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_load_with_custom_path() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp, "1234  Vendor Name\n\t5678  Product Name\n").unwrap();
+        let path = tmp.path().to_str().unwrap();
+        let ids = UsbIds::load(Some(&[path]));
+        assert!(ids.is_some());
+        let ids = ids.unwrap();
+        assert_eq!(ids.lookup_vendor(0x1234), Some("Vendor Name"));
+        assert_eq!(ids.lookup_product(0x1234, 0x5678), Some("Product Name"));
+    }
+
+    #[test]
+    fn test_load_with_multiple_paths() {
+        let mut tmp1 = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp1, "AAAA  First Vendor\n").unwrap();
+        let mut tmp2 = tempfile::NamedTempFile::new().unwrap();
+        write!(tmp2, "BBBB  Second Vendor\n").unwrap();
+        let paths = [
+            "/nonexistent/path/usb.ids",
+            tmp1.path().to_str().unwrap(),
+            tmp2.path().to_str().unwrap(),
+        ];
+        let ids = UsbIds::load(Some(&paths));
+        assert!(ids.is_some());
+        let ids = ids.unwrap();
+        // Stops at first readable file (tmp1 with "First Vendor")
+        assert_eq!(ids.lookup_vendor(0xAAAA), Some("First Vendor"));
+        assert_eq!(ids.lookup_vendor(0xBBBB), None);
+    }
+
+    #[test]
+    fn test_load_with_nonexistent_path() {
+        let ids = UsbIds::load(Some(&["/nonexistent/usb.ids"]));
+        assert!(ids.is_none());
+    }
+
+    #[test]
+    fn test_load_with_defaults() {
+        let ids = UsbIds::load(None);
+        let _ = ids;
     }
 }
