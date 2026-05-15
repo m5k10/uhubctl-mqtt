@@ -430,8 +430,7 @@ pub fn scan_hubs(context: &rusb::Context) -> Result<Vec<HubInfo>, String> {
 
     let dual_locs: Vec<String> = hubs
         .iter()
-        .filter(|h| h.dual_location.is_some())
-        .map(|h| h.dual_location.as_ref().unwrap().clone())
+        .filter_map(|h| h.dual_location.clone())
         .collect();
 
     let raw_count = hubs.len();
