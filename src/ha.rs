@@ -1,4 +1,4 @@
-use crate::hub::HubInfo;
+use crate::hub::{HubInfo, lpsm_str};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -159,11 +159,6 @@ pub struct HubAttributes {
 
 impl HubAttributes {
     pub fn from_hub(hub: &HubInfo) -> Self {
-        let lpsm_str = match hub.lpsm {
-            1 => "ppps",
-            0 => "ganged",
-            _ => "nops",
-        };
         HubAttributes {
             vid_pid: hub.vendor.clone(),
             vendor: hub.ds.vendor.clone(),
@@ -175,7 +170,7 @@ impl HubAttributes {
             bus: hub.bus,
             super_speed: hub.super_speed,
             nports: hub.nports,
-            lpsm: lpsm_str.to_string(),
+            lpsm: lpsm_str(hub.lpsm).to_string(),
             container_id: hub.container_id.clone(),
             applicable: hub.applicable,
             dual_location: hub.dual_location.clone(),

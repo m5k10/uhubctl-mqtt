@@ -206,17 +206,12 @@ fn get_device_description(device: &rusb::Device<rusb::Context>) -> DescriptorStr
             let bcd_usb = (ver.0 as u16) << 8 | (ver.1 as u16);
             let ss = ver.0 >= 3;
             if let Ok((nports, lpsm)) = read_hub_descriptor(&handle, ss) {
-                let lpsm_str = match lpsm {
-                    1 => "ppps",
-                    0 => "ganged",
-                    _ => "nops",
-                };
                 ds.description.push_str(&format!(
                     ", USB {:x}.{:02x}, {} ports, {}",
                     bcd_usb >> 8,
                     bcd_usb & 0xff,
                     nports,
-                    lpsm_str
+                    lpsm_str(lpsm)
                 ));
             }
         }
@@ -492,4 +487,12 @@ pub fn discovery_hubs(hubs: &[HubInfo]) -> Vec<&HubInfo> {
 
 pub fn find_hub_by_location<'a>(hubs: &'a [HubInfo], location: &str) -> Option<&'a HubInfo> {
     hubs.iter().find(|h| h.location == location)
+}
+
+pub fn lpsm_str(lpsm: u8) -> &'static str {
+    match lpsm {
+        1 => "ppps",
+        0 => "ganged",
+        _ => "nops",
+    }
 }
