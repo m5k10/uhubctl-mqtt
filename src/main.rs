@@ -5,7 +5,7 @@ mod mqtt;
 mod usb_ids;
 
 use clap::Parser;
-use log::{LevelFilter, error, info, warn};
+use log::{LevelFilter, debug, error, info, warn};
 use std::collections::HashMap;
 use std::process;
 use std::time::Duration;
@@ -173,6 +173,12 @@ fn format_port_status(loc: &str, port: u8, cur: &PortStatusInfo) -> String {
     format!("Hub {} port {}: {}, {}", loc, port, conn, power)
 }
 
+fn try_send_event(tx: &broadcast::Sender<HubEvent>, event: HubEvent) {
+    if tx.send(event).is_err() {
+        debug!("Event receiver dropped");
+    }
+}
+
 fn emit_hub_diffs(
     prev: &HashMap<String, TrackedHub>,
     curr: &HashMap<String, TrackedHub>,
@@ -180,7 +186,6 @@ fn emit_hub_diffs(
 ) {
     for (loc, hub) in curr.iter() {
         if let Some(prev_hub) = prev.get(loc) {
-            // Existing hub — check for port status changes
             if hub.port_status != prev_hub.port_status {
                 for (port_idx, (cur, prv)) in hub
                     .port_status
@@ -192,13 +197,13 @@ fn emit_hub_diffs(
                         let port = (port_idx + 1) as u8;
                         info!("{}", format_port_status(loc, port, cur));
                         if cur.powered != prv.powered {
-                            let _ = tx.send(HubEvent::PortPowerChanged {
+                            try_send_event(tx, HubEvent::PortPowerChanged {
                                 hub_location: loc.clone(),
                                 port,
                                 powered: cur.powered,
                             });
                         }
-                        let _ = tx.send(HubEvent::PortStatusChanged {
+                        try_send_event(tx, HubEvent::PortStatusChanged {
                             hub_location: loc.clone(),
                             port,
                             status: cur.clone(),
@@ -207,11 +212,10 @@ fn emit_hub_diffs(
                 }
             }
         } else {
-            // New hub
-            let _ = tx.send(synthetic_hub_added(hub));
+            try_send_event(tx, synthetic_hub_added(hub));
             for (port_idx, status) in hub.port_status.iter().enumerate() {
                 let port = (port_idx + 1) as u8;
-                let _ = tx.send(HubEvent::PortStatusChanged {
+                try_send_event(tx, HubEvent::PortStatusChanged {
                     hub_location: loc.clone(),
                     port,
                     status: status.clone(),
@@ -221,7 +225,7 @@ fn emit_hub_diffs(
     }
     for loc in prev.keys() {
         if !curr.contains_key(loc) {
-            let _ = tx.send(HubEvent::HubRemoved(loc.clone()));
+            try_send_event(tx, HubEvent::HubRemoved(loc.clone()));
         }
     }
 }
@@ -310,14 +314,16 @@ async fn main() {
     });
 
     // Signal an initial resync to MQTT (sends HubAdded for current hubs)
-    let _ = tx_resync.send(());
+    if tx_resync.send(()).is_err() {
+        debug!("Resync receiver dropped");
+    }
 
     loop {
         tokio::select! {
             biased;
             _ = tokio::signal::ctrl_c() => {
                 info!("Shutting down...");
-                let _ = tx_event.send(HubEvent::Shutdown);
+                try_send_event(&tx_event, HubEvent::Shutdown);
                 // Wait for MQTT to publish offline messages
                 if tokio::time::timeout(Duration::from_secs(3), mqtt_handle).await.is_err() {
                     warn!("MQTT task did not finish in time");
@@ -340,9 +346,9 @@ async fn main() {
                     Ok(hubs) => {
                         let curr = hubs_to_map(&context, &hubs, usb_ids.as_ref());
                         for hub in curr.values() {
-                            let _ = tx_event.send(synthetic_hub_added(hub));
+                            try_send_event(&tx_event, synthetic_hub_added(hub));
                             for (port_idx, status) in hub.port_status.iter().enumerate() {
-                                let _ = tx_event.send(HubEvent::PortStatusChanged {
+                                try_send_event(&tx_event, HubEvent::PortStatusChanged {
                                     hub_location: hub.location.clone(),
                                     port: (port_idx + 1) as u8,
                                     status: status.clone(),
@@ -360,7 +366,7 @@ async fn main() {
                         info!("Set port {} on hub {} to {}", port, hub_location, if on { "ON" } else { "OFF" });
                         match control::control_port_power(&context, &hub_location, port, on) {
                             Ok(()) => {
-                                let _ = tx_event.send(HubEvent::PortPowerChanged {
+                                try_send_event(&tx_event, HubEvent::PortPowerChanged {
                                     hub_location,
                                     port,
                                     powered: on,

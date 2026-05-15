@@ -1,4 +1,4 @@
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use paho_mqtt as mqtt;
 use serde::Serialize;
 use std::process;
@@ -319,7 +319,9 @@ fn setup_command_callback(cli: &mqtt::AsyncClient, cmd_tx: mpsc::UnboundedSender
                 let payload = msg.payload_str().to_string();
                 if let Some(cmd) = parse_command(&topic, &payload) {
                     info!("Command: {:?}", cmd);
-                    let _ = cmd_tx.send(cmd);
+                    if cmd_tx.send(cmd).is_err() {
+                        warn!("Command channel closed, command dropped");
+                    }
                 }
             }
         },
@@ -490,7 +492,9 @@ pub async fn mqtt_loop(
                 let deadline = Instant::now() + reconnect_timeout;
                 loop {
                     tokio::time::sleep(Duration::from_secs(5)).await;
-                    let _ = resync_tx.send(());
+                    if resync_tx.send(()).is_err() {
+                        debug!("Resync channel closed during reconnect");
+                    }
 
                     let rx = tx_event.subscribe();
                     match run_session(&url, &username, &password, &node_id, rx, cmd_tx.clone())
