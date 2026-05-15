@@ -1,5 +1,6 @@
 use crate::hub::{HubInfo, find_hub_by_location, read_device_strings, scan_hubs};
 use crate::usb_ids::UsbIds;
+use log::warn;
 use rusb::UsbContext;
 use serde::Serialize;
 use std::time::Duration;
@@ -269,8 +270,9 @@ pub fn control_port_power(
 
     if let Some(ref dual_loc) = primary.dual_location
         && let Some(dual) = find_hub_by_location(&hubs, dual_loc)
+        && let Err(e) = set_port_power(dual, port, on)
     {
-        let _ = set_port_power(dual, port, on);
+        warn!("Dual hub {} port {} power change failed: {}", dual_loc, port, e);
     }
 
     Ok(())
