@@ -8,7 +8,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signa
 log = "0.4"
 env_logger = "0.11"
 clap = { version = "4.6", features = ["derive"] }
-paho-mqtt = "0.13"
+paho-mqtt = { version = "0.13", features = ["bundled", "vendored-ssl"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusb = { version = "0.9", features = ["vendored"] }
