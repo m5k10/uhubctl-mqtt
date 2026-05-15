@@ -93,7 +93,7 @@ fn availability_topics(global_avail_topic: &str, per_hub_avail: &str) -> Vec<Ava
     ]
 }
 
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 pub struct PortAttributes {
     pub hub_location: String,
     pub port_number: u8,

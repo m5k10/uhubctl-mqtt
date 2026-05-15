@@ -189,25 +189,7 @@ async fn publish_attributes(
     port: u8,
     status: &PortStatusInfo,
 ) -> Result<(), String> {
-    let (
-        connected_vid_pid,
-        connected_vendor,
-        connected_product,
-        connected_serial,
-        connected_description,
-        connected_max_power_ma,
-    ) = match &status.connected_device {
-        Some(d) => (
-            d.vid_pid.clone(),
-            d.vendor.clone(),
-            d.product.clone(),
-            d.serial.clone(),
-            d.description.clone(),
-            d.max_power_ma,
-        ),
-        None => Default::default(),
-    };
-    let attrs = PortAttributes {
+    let mut attrs = PortAttributes {
         hub_location: hub_location.to_string(),
         port_number: port,
         connected: status.connected,
@@ -217,13 +199,16 @@ async fn publish_attributes(
         overcurrent: status.overcurrent,
         speed: status.speed.clone(),
         link_state: status.link_state.clone(),
-        connected_vid_pid,
-        connected_vendor,
-        connected_product,
-        connected_serial,
-        connected_description,
-        connected_max_power_ma,
+        ..Default::default()
     };
+    if let Some(d) = &status.connected_device {
+        attrs.connected_vid_pid = d.vid_pid.clone();
+        attrs.connected_vendor = d.vendor.clone();
+        attrs.connected_product = d.product.clone();
+        attrs.connected_serial = d.serial.clone();
+        attrs.connected_description = d.description.clone();
+        attrs.connected_max_power_ma = d.max_power_ma;
+    }
     let topic = MqttDiscoverySwitch::attributes_topic(topic_prefix, hub_location, port);
     publish_json(cli, &topic, &attrs).await
 }
